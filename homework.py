@@ -43,13 +43,13 @@ ERROR_IN_RESPONSE = ('API вернул ответ с ошибкой {error}. '
                      'API - {url}, токен - {headers}, '
                      'Момент времени - {params}')
 UNKNOWN_STATUS = 'Неизвестный статус домашней работы: {status}'
-ERROR_NO_DICT = 'Ожидается тип "dict", получено: {type}'
-ERROR_NO_LIST = 'Ожидается тип "list", получено: {type}'
+RESPONSE_NO_DICT = 'Ожидается тип "dict", получено: {type}'
+RESPONSE_NO_LIST = 'Ожидается тип "list", получено: {type}'
 ERROR_NO_KEY = 'Ключа "homeworks" нет в ответе {response}'
 CHANGE_HOMEWORK_STATUS = 'Изменился статус проверки работы "{name}". {verdict}'
-MISSING_TOKENS = 'Пропущены токены: {token}'
+MISSING_TOKENS = 'Пропущены токены: {tokens}'
 NO_CHANGE_HOMEWORK_STATUS = 'Статус работы не изменился'
-FINAL_LOG = 'Ошибка в работе программы: {error}'
+RUNTIME_ERROR = 'Ошибка в работе программы: {error}'
 
 
 def send_message(bot, message):
@@ -63,7 +63,6 @@ def send_message(bot, message):
 
 def get_api_answer(timestamp):
     """Делает запрос к сайту и, если ответ корректен, возвращает его."""
-    # params = {'from_date': timestamp}  # timestamp - 86400 * 30
     params = dict(
         url=ENDPOINT,
         headers=HEADERS,
@@ -93,12 +92,12 @@ def get_api_answer(timestamp):
 def check_response(response):
     """Проверка наличия и статуса домашней работы."""
     if not isinstance(response, dict):
-        raise TypeError(ERROR_NO_DICT.format(type=type(response)))
+        raise TypeError(RESPONSE_NO_DICT.format(type=type(response)))
     if 'homeworks' not in response:
         raise KeyError(ERROR_NO_KEY.format(response=response))
     if not isinstance(response['homeworks'], list):
         raise TypeError(
-            ERROR_NO_LIST.format(type=type(response['homeworks']))
+            RESPONSE_NO_LIST.format(type=type(response['homeworks']))
         )
     return response.get('homeworks')
 
@@ -111,18 +110,16 @@ def parse_status(homework):
             UNKNOWN_STATUS.format(status)
         )
     return CHANGE_HOMEWORK_STATUS.format(
-        name=homework.get('homework_name'),
-        verdict=VERDICTS.get(status)
+        name=homework['homework_name'],
+        verdict=VERDICTS[status]
     )
 
 
 def check_tokens():
     """Проверка наличия переменых окружения."""
-    missing_tokens = [
-        logging.critical(MISSING_TOKENS.format(token=token))
-        for token in TOKENS if globals()[token] is None
-    ]
+    missing_tokens = [token for token in TOKENS if globals()[token] is None]
     if missing_tokens:
+        logging.critical(MISSING_TOKENS.format(tokens=missing_tokens))
         return False
     return True
 
@@ -134,19 +131,15 @@ def main():
     logging.debug(START_BOT)
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     timestamp = int(time.time())
-    previous_message = ''
     while True:
         try:
             response = get_api_answer(timestamp)
             message = parse_status(check_response(response)[0])
-            if message != previous_message:
-                send_message(bot, message)
-                previous_message = message
-            else:
-                logging.debug(NO_CHANGE_HOMEWORK_STATUS)
+            send_message(bot, message)
+            logging.debug(NO_CHANGE_HOMEWORK_STATUS)
             timestamp = response.get('current_date', timestamp)
         except Exception as error:
-            message = FINAL_LOG.format(error=error)
+            message = RUNTIME_ERROR.format(error=error)
             send_message(bot, message)
             logging.exception(message)
         finally:
